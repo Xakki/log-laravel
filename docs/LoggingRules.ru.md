@@ -217,7 +217,7 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 | `load_avg_5m`    | float  | system load 5 min                                              |
 | `load_avg_15m`   | float  | system load 15 min                                             |
 
-> **LaraLog implementation:** `ExtraProcessor` (`src/Processor/ExtraProcessor.php`) + `BaseContext` (`src/BaseContext.php`). Сейчас `request_id` кладётся в `extra` - это legacy; миграция в `context` запланирована (см. §4.3).
+> **LaraLog implementation:** `ExtraProcessor` (`src/Processor/ExtraProcessor.php`) + `BaseContext` (`src/BaseContext.php`). `request_id` лежит в **`context`**, а не в `extra` (`LogManager::appendContext()`) - запланированная миграция выполнена. Те поля, что реально в `extra`, пишутся процессорами и **не проходят** через context type corrector, поэтому конвенция именования из §4.5 на них не распространяется.
 
 ### 4.3 context - per-event
 
@@ -226,14 +226,14 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 | Поле                        | Тип           | Когда                                                                 |
 |-----------------------------|---------------|-----------------------------------------------------------------------|
 | `log_type`                  | string        | кто инициировал лог; см. §4.3.1 (в `context`, а не top-level, ради Monolog-совместимости) |
-| `request_id`                | UUID v4       | из `X-Request-ID` или сгенерирован; переносится через очереди и исходящие вызовы |
+| `request_id`                | UUID v4       | из `X-Request-ID` или сгенерирован; переносится через очереди и исходящие вызовы. Библиотека пиннит его строкой - см. §4.5 |
 | `request_url`               | string        | путь (без query string или с redacted query)                          |
 | `request_method`            | string        | `GET`/`POST`/...                                                      |
 | `request_host`              | string        | `Host` header                                                         |
 | `request_user_agent`        | string        | `User-Agent`                                                          |
-| `trace_id`, `span_id`       | hex           | при OTel; `request_id` - вырожденная форма                            |
-| `user_id`                   | int           | актор операции                                                        |
-| `session_id`                | string (hash) | сессия HTTP / queue worker'а                                          |
+| `trace_id`, `span_id`       | hex           | при OTel; `request_id` - вырожденная форма. Hex, поэтому **пиннить строкой** в конфиге (§4.5) |
+| `user_id`                   | int           | актор операции; id - int (§4.5)                                       |
+| `session_id`                | string (hash) | сессия HTTP / queue worker'а; хеш, поэтому **пиннить строкой** в конфиге (§4.5) |
 | `file`, `line`              | string        | `path:int` авто из стека (`TraitFileTrace`), руками не передаём       |
 | `trace`                     | string        | стек-трейс, обрезанный по уровню (см. §3.7)                           |
 | `exception`                 | class FQN     | полное имя класса исключения                                          |
@@ -243,7 +243,7 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 | `memory_usage`              | int (байты)   | `memory_get_usage(true)`                                              |
 | `memory_peak`               | int (байты)   | `memory_get_peak_usage(true)`                                         |
 | `tag`                       | string        | routing-лейбл (`sql`, `queue`, `auth`, ...); whitelist см. §9.3       |
-| business IDs                | int / string  | `order_id`, `payment_id`, любое доменное                              |
+| business IDs                | int           | `order_id`, `payment_id`, любое доменное (§4.5)                       |
 
 > **LaraLog implementation:** `LogManager::appendContext()` собирает exception-поля; `LogManager::contextTypeCorrector()` приводит типы.
 
@@ -272,10 +272,10 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 
 // хорошо
 {"level":"info","message":"order paid",
- "context":{"order_id":12345,"user_id":67890,"amount_cents":4999,"currency":"EUR","tag":"billing"}}
+ "context":{"order_id":12345,"user_id":67890,"order_money":49.99,"currency":"EUR","tag":"billing"}}
 ```
 
-Хорошая форма ищется (`order_id:12345`, `amount_cents>10000`). Плохая - нет.
+Хорошая форма ищется (`order_id:12345`, `order_money>100`). Плохая - нет.
 
 **Анти-пример с PII** (формально структурированный, но всё равно неправильный):
 
@@ -293,15 +293,22 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 
 ### 4.5 Дисциплина типов
 
-Одно и то же поле, приходящее то как `"123"`, то как `123` - это два столбца в Elasticsearch, краш индексера в Loki, путаница в Grafana.
+Одно и то же поле, приходящее то как `"123"`, то как `123` - это два столбца в Elasticsearch, краш индексера в Loki, путаница в Grafana. В OpenSearch без `ignore_malformed` - молча отброшенный **документ целиком**.
 
-- `*_id`, `*Id`, `*_cnt`, `*_count`, `*Size` → integer
-- `is_*`, `has_*`, `flag*` → boolean
-- Деньги → integer в минорных единицах (`amount_cents`), никогда float
-- Длительности → integer миллисекунды
-- Таймстампы в context → одно из: RFC 3339 строка ИЛИ Unix epoch int. Выбираем по проекту, не смешиваем.
+Тип задаётся **именем поля**, а не кастом на месте вызова. Полный словарь канонических слов, как выбрать имя и как добавить свои правила - **[ContextFieldNaming.ru.md](ContextFieldNaming.ru.md)**. Коротко:
 
-> **LaraLog implementation:** `LogManager::contextTypeCorrector()` делает это автоматически. Reserved keys в `src/const.php`.
+- **По умолчанию всё - строка.** Правила есть только у арифметических полей.
+- `*_int` / `*_float` / `*_bool` - escape hatch с **высшим приоритетом**: бьёт любое другое правило, включая служебные поля библиотеки.
+- Совпадение по **целому сегменту** ключа (разделитель `_`), не по подстроке: последний сегмент задаёт тип, первый - только булев префикс.
+- `*_count`, `*_cnt`, `*_num`, `*_qty`, `*_total`, `*_sum`, `*_size`, `*_len` → integer
+- `is_*`, `has_*`, `can_*`, `*_flag`, `*_enabled`, `*_success` → boolean
+- **Деньги** → float, имя `*_money` / `*_amount` / `*_price`. `*_sum` и `*_total` - integer: под таким именем копейки молча обрежутся. (Раньше здесь предписывались минорные единицы `amount_cents` - отменено: `cents` не является словом словаря, такой ключ станет строкой.)
+- **Длительности** → `*_duration` (float, доли секунды) или `*_seconds` (integer). `*_ms` и `*_time` не годятся: `ms` не совпадает ни с одним словом и поле станет строкой, а `time` - integer и обрежет `microtime(true)`.
+- **Идентификаторы** (`*_id` и голый `id`) → **int**: в этих проектах id - auto-increment integer из MariaDB, и по нему нужны range-запросы и агрегации. Две молчаливые ловушки: ведущие нули уничтожаются (`'00123'` → `123`), а id длиннее `PHP_INT_MAX` падает в строку - и тогда ключ int для коротких значений и строка для длинных. **Не-числовой id** (UUID, hash, hex - `request_id`, `session_id`, `trace_id`, `span_id`) обязан быть **запиннен строкой через конфиг `exact`**, а не оставлен на фолбэк: суффикса `_string` нет, а фолбэк станет int в тот момент, когда значение окажется из одних цифр. Свой `request_id` библиотека пиннит сама. Учти: `word` бьёт `prefix`, поэтому `is_bot_id` - int, а не bool. Подробности: [ContextFieldNaming.ru.md](ContextFieldNaming.ru.md) §2.6, §4.9-§4.11.
+- Таймстампы в context → одно из: RFC 3339 строка ИЛИ Unix epoch int (имя `*_time`). Выбираем по проекту, не смешиваем.
+- camelCase не режется на сегменты: `orderQty` не совпадёт с `qty`. Нужен `logger.snake_case` либо запись в `exact` строчными буквами.
+
+> **LaraLog implementation:** `LogManager::contextTypeCorrector()` делает это автоматически; таблица правил - `LogManager::$contextTypeRules`, правила проекта - `config('logger.context_type_rules')`. Reserved keys в `src/const.php`. То же соглашение в sibling-библиотеке PHPErrorCatcher - обе пишут в один кластер OpenSearch и обязаны совпадать.
 
 ### 4.6 Лимиты по размеру
 
@@ -316,9 +323,10 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 
 ### 4.7 Именование полей
 
-- `snake_case` везде. Смесь camelCase и snake_case в одном пейлоаде ломает дашборды.
-- Префиксы для родственных полей: `db_query`, `db_time_ms`, `db_table`.
+- `snake_case` везде. Смесь camelCase и snake_case в одном пейлоаде ломает дашборды - и camelCase-ключ не совпадёт ни с одним правилом типов (§4.5).
+- Префиксы для родственных полей: `db_query`, `db_duration`, `db_table`.
 - Зарезервированные префиксы: `app_*`, `http_*`, `db_*`, `queue_*`. Проектные ключи - со своим префиксом.
+- Последний сегмент имени - это объявление типа. Словарь слов - [ContextFieldNaming.ru.md](ContextFieldNaming.ru.md).
 
 ---
 
@@ -347,7 +355,7 @@ Vendor/Monolog/Illuminate кадры вырезаются (`TraitFileTrace`). Г
 ```jsonc
 {"level":"info","message":"entry","context":{"tag":"entrypoint","entrypoint":"POST /orders","payload_size":1234}}
 …работа…
-{"level":"info","message":"exit","context":{"tag":"entrypoint","entrypoint":"POST /orders","success":true,"duration_ms":83,"status_code":200}}
+{"level":"info","message":"exit","context":{"tag":"entrypoint","entrypoint":"POST /orders","success":true,"duration":0.083,"status_code":"200"}}
 ```
 
 Без exit не видно, завершилось ли. Без entry нет якоря для request_id.
@@ -404,7 +412,7 @@ Loki взрывает chunk count, Elastic - mapping, Graylog - индекс с�
 
 ### 6.2 Медленные SQL-запросы
 
-Отдельный канал, `tag: sql`. Обязательные поля: `db_query` (обрезанный), `db_table`, `db_time_ms`, `sql_type`. **Никогда** не логируем сырые `bindings` в проде.
+Отдельный канал, `tag: sql`. Обязательные поля: `db_query` (обрезанный), `db_table`, `db_duration`, `sql_type`. **Никогда** не логируем сырые `bindings` в проде.
 
 Два порога:
 
@@ -447,7 +455,7 @@ Heartbeat в лог оставляем там, где Prometheus недосту�
 ```jsonc
 {"level":"info","level_name":"info","message":"http call ok",
  "context":{"tag":"upstream","target":"payments-api","method":"POST","path":"/charge",
-            "response_code":200,"latency_ms":143,"response_size":512,"request_id":"..."}}
+            "response_code":"200","latency_duration":0.143,"response_size":512,"request_id":"..."}}
 ```
 
 Зачем не оптимизируем "молчание - норма":
@@ -462,8 +470,8 @@ Heartbeat в лог оставляем там, где Prometheus недосту�
 |------------------|--------|-------------------------------------------|
 | `target`         | string | имя upstream (низкая cardinality, не URL) |
 | `method`, `path` | string | для HTTP; path без query string           |
-| `response_code`  | int    | HTTP/gRPC код                             |
-| `latency_ms`     | int    | end-to-end                                |
+| `response_code`  | string | HTTP/gRPC код (`code` - не слово словаря) |
+| `latency_duration` | float  | end-to-end, секунды                     |
 | `response_size`  | int    | в байтах                                  |
 | `attempt`        | int    | 1 при первой удачной попытке              |
 
@@ -487,7 +495,7 @@ Heartbeat в лог оставляем там, где Prometheus недосту�
 
 - `attempt` - номер попытки, начиная с 1
 - `max_attempts`
-- `backoff_ms` - сколько ждали до этой попытки
+- `backoff_duration` - сколько секунд ждали до этой попытки
 - `error_reason` - короткая строка (`timeout`, `connection_refused`, `5xx`, `4xx`), не текст
 - `exception` (если был) - класс, не сообщение
 
@@ -542,7 +550,7 @@ Audit-лог фиксирует "кто, что, с чем, когда и с к�
   "actor": {
     "user_id": 67890,
     "role": "admin",
-    "session_id": "sha256:a1b2c3d4",
+    "session_id": "sha256:a1b2c3d4",   // хеш - пиннится строкой, см. §4.5
     "ip": "1.2.3.4",
     "user_agent": "...",
     "impersonated_by": null
@@ -828,7 +836,7 @@ public function test_login_failure_log_does_not_contain_password(): void
 ```yaml
 - name: order_id
   layer: context
-  type: int
+  type: int  # id - int намеренно (§4.5)
   description: Идентификатор заказа в billing-домене
   owner: team-billing
   added_in: v1
@@ -902,11 +910,11 @@ tags_allowed:
 | `request_host`         | `server.address`                    |                                      |
 | `request_user_agent`   | `user_agent.original`               |                                      |
 | `status_code`          | `http.response.status_code`         | для HTTP                             |
-| `latency_ms`           | `http.client.request.duration`      | OTel в секундах, мы в мс             |
+| `latency_duration`     | `http.client.request.duration`      | обе в секундах                       |
 | `target`               | `server.address`                    | для upstream-вызовов                 |
 | `db_query`             | `db.query.text`                     |                                      |
 | `db_table`             | `db.collection.name`                |                                      |
-| `db_time_ms`           | `db.client.operation.duration`      | OTel в секундах, мы в мс             |
+| `db_duration`          | `db.client.operation.duration`      | обе в секундах                       |
 | `exception`            | `exception.type`                    | FQN класса                           |
 | `exception_message`    | `exception.message`                 |                                      |
 | `trace`                | `exception.stacktrace`              | для exception-логов                  |

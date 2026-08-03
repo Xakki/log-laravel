@@ -217,7 +217,7 @@ Auto-populated by processors at process start. The value does not change between
 | `load_avg_5m`     | float  | system load 5 min                                               |
 | `load_avg_15m`    | float  | system load 15 min                                              |
 
-> **LaraLog implementation:** `ExtraProcessor` (`src/Processor/ExtraProcessor.php`) + `BaseContext` (`src/BaseContext.php`). Currently `request_id` goes into `extra` — this is legacy; migration into `context` is planned (see §4.3).
+> **LaraLog implementation:** `ExtraProcessor` (`src/Processor/ExtraProcessor.php`) + `BaseContext` (`src/BaseContext.php`). `request_id` lives in **`context`**, not `extra` (`LogManager::appendContext()`) — the planned migration is done. Fields that really are in `extra` are written by processors and are **not** passed through the context type corrector, so the naming convention of §4.5 does not apply to them.
 
 ### 4.3 context — per-event
 
@@ -226,14 +226,14 @@ Populated by application code or auto-injected via MDC/scope. Changes per reques
 | Field                        | Type           | When                                                                                       |
 |------------------------------|----------------|--------------------------------------------------------------------------------------------|
 | `log_type`                   | string         | who initiated the log; see §4.3.1 (lives in `context`, not top-level, for Monolog compat)  |
-| `request_id`                 | UUID v4        | from `X-Request-ID` or generated; carried across queues and outgoing calls                 |
+| `request_id`                 | UUID v4        | from `X-Request-ID` or generated; carried across queues and outgoing calls. Pinned to string by the library — see §4.5 |
 | `request_url`                | string         | path (without query string or with redacted query)                                         |
 | `request_method`             | string         | `GET`/`POST`/...                                                                           |
 | `request_host`               | string         | `Host` header                                                                              |
 | `request_user_agent`         | string         | `User-Agent`                                                                               |
-| `trace_id`, `span_id`        | hex            | with OTel; `request_id` is a degenerate form                                               |
-| `user_id`                    | int            | actor of the operation                                                                     |
-| `session_id`                 | string (hash)  | HTTP session / queue worker session                                                        |
+| `trace_id`, `span_id`        | hex            | with OTel; `request_id` is a degenerate form. Hex, so **pin to string** in config (§4.5)   |
+| `user_id`                    | int            | actor of the operation; an id is an int (§4.5)                                             |
+| `session_id`                 | string (hash)  | HTTP session / queue worker session; a hash, so **pin to string** in config (§4.5)         |
 | `file`, `line`               | string         | `path:int` auto from the stack (`TraitFileTrace`), don't pass manually                     |
 | `trace`                      | string         | stack trace, truncated per level (see §3.7)                                                |
 | `exception`                  | class FQN      | fully-qualified exception class name                                                       |
@@ -243,7 +243,7 @@ Populated by application code or auto-injected via MDC/scope. Changes per reques
 | `memory_usage`               | int (bytes)    | `memory_get_usage(true)`                                                                   |
 | `memory_peak`                | int (bytes)    | `memory_get_peak_usage(true)`                                                              |
 | `tag`                        | string         | routing label (`sql`, `queue`, `auth`, ...); whitelist see §9.3                            |
-| business IDs                 | int / string   | `order_id`, `payment_id`, anything domain-specific                                         |
+| business IDs                 | int            | `order_id`, `payment_id`, anything domain-specific (§4.5)                                  |
 
 > **LaraLog implementation:** `LogManager::appendContext()` collects exception fields; `LogManager::contextTypeCorrector()` normalizes types.
 
@@ -272,10 +272,10 @@ Default — `logger`. A typical alert condition: `log_type IN (exception, fatal)
 
 // good
 {"level":"info","message":"order paid",
- "context":{"order_id":12345,"user_id":67890,"amount_cents":4999,"currency":"EUR","tag":"billing"}}
+ "context":{"order_id":12345,"user_id":67890,"order_money":49.99,"currency":"EUR","tag":"billing"}}
 ```
 
-The good form is searchable (`order_id:12345`, `amount_cents>10000`). The bad one isn't.
+The good form is searchable (`order_id:12345`, `order_money>100`). The bad one isn't.
 
 **Anti-example with PII** (formally structured, still wrong):
 
@@ -293,15 +293,22 @@ Structure doesn't override the redaction policy of §2. Password — always in t
 
 ### 4.5 Type discipline
 
-The same field arriving sometimes as `"123"` and sometimes as `123` produces two columns in Elasticsearch, an indexer crash in Loki, and confusion in Grafana.
+The same field arriving sometimes as `"123"` and sometimes as `123` produces two columns in Elasticsearch, an indexer crash in Loki, and confusion in Grafana. In OpenSearch without `ignore_malformed` — a silently dropped **whole document**.
 
-- `*_id`, `*Id`, `*_cnt`, `*_count`, `*Size` → integer
-- `is_*`, `has_*`, `flag*` → boolean
-- Money → integer in minor units (`amount_cents`), never float
-- Durations → integer milliseconds
-- Timestamps in context → one of: RFC 3339 string OR Unix epoch int. Pick per project, don't mix.
+The type is declared by the **field name**, not by a cast at the call site. The full dictionary of canonical words, how to pick a name and how to add your own rules — **[ContextFieldNaming.md](ContextFieldNaming.md)**. In short:
 
-> **LaraLog implementation:** `LogManager::contextTypeCorrector()` does this automatically. Reserved keys in `src/const.php`.
+- **String is the default.** Rules exist only for genuinely arithmetic fields.
+- `*_int` / `*_float` / `*_bool` — an escape hatch with the **highest priority**: it beats every other rule, including the library's own reserved fields.
+- Matching is on a **whole segment** of the key (separator `_`), never a substring: the last segment sets the type, the first one only supplies a boolean prefix.
+- `*_count`, `*_cnt`, `*_num`, `*_qty`, `*_total`, `*_sum`, `*_size`, `*_len` → integer
+- `is_*`, `has_*`, `can_*`, `*_flag`, `*_enabled`, `*_success` → boolean
+- **Money** → float, named `*_money` / `*_amount` / `*_price`. `*_sum` and `*_total` are integer: under such a name the fractional part is silently truncated. (This section used to prescribe minor units `amount_cents` — revoked: `cents` is not a dictionary word, so such a key becomes a string.)
+- **Durations** → `*_duration` (float, fractional seconds) or `*_seconds` (integer). `*_ms` and `*_time` do not work: `ms` matches no word and the field becomes a string, while `time` is integer and truncates `microtime(true)`.
+- **Identifiers** (`*_id` and the bare `id`) → **int**: in these projects an id is an auto-increment MariaDB integer, and we want range queries and aggregations on it. Two silent traps: leading zeros are destroyed (`'00123'` → `123`), and an id past `PHP_INT_MAX` falls back to string so that key becomes int for short values and string for long ones. A **non-integer id** (UUID, hash, hex — `request_id`, `session_id`, `trace_id`, `span_id`) must be **pinned to string via config `exact`**, never left to the fallback: there is no `_string` escape hatch, and the fallback flips to int the moment a value is all digits. The library ships that pin for its own `request_id`. Note `word` outranks `prefix`, so `is_bot_id` is an int, not a bool. Details: [ContextFieldNaming.md](ContextFieldNaming.md) §2.6, §4.9-§4.11.
+- Timestamps in context → one of: RFC 3339 string OR Unix epoch int (named `*_time`). Pick per project, don't mix.
+- camelCase is not split into segments: `orderQty` will not match `qty`. It needs `logger.snake_case`, or an `exact` entry written lowercase.
+
+> **LaraLog implementation:** `LogManager::contextTypeCorrector()` does this automatically; the rule table is `LogManager::$contextTypeRules`, project rules go into `config('logger.context_type_rules')`. Reserved keys in `src/const.php`. The sibling library PHPErrorCatcher follows the same convention — both write into one OpenSearch cluster and must agree.
 
 ### 4.6 Size limits
 
@@ -316,9 +323,10 @@ The same field arriving sometimes as `"123"` and sometimes as `123` produces two
 
 ### 4.7 Field naming
 
-- `snake_case` everywhere. Mixing camelCase and snake_case in one payload breaks dashboards.
-- Prefixes for related fields: `db_query`, `db_time_ms`, `db_table`.
+- `snake_case` everywhere. Mixing camelCase and snake_case in one payload breaks dashboards — and a camelCase key matches no type rule (§4.5).
+- Prefixes for related fields: `db_query`, `db_duration`, `db_table`.
 - Reserved prefixes: `app_*`, `http_*`, `db_*`, `queue_*`. Project keys go under their own prefix.
+- The last segment of a name is a type declaration. Dictionary of words — [ContextFieldNaming.md](ContextFieldNaming.md).
 
 ---
 
@@ -347,7 +355,7 @@ Every entrypoint (HTTP, queue worker, scheduled job, RPC) emits a pair:
 ```jsonc
 {"level":"info","message":"entry","context":{"tag":"entrypoint","entrypoint":"POST /orders","payload_size":1234}}
 …work…
-{"level":"info","message":"exit","context":{"tag":"entrypoint","entrypoint":"POST /orders","success":true,"duration_ms":83,"status_code":200}}
+{"level":"info","message":"exit","context":{"tag":"entrypoint","entrypoint":"POST /orders","success":true,"duration":0.083,"status_code":"200"}}
 ```
 
 Without exit, you can't tell whether it finished. Without entry, there's no anchor for request_id.
@@ -404,7 +412,7 @@ Required fields:
 
 ### 6.2 Slow SQL queries
 
-Separate channel, `tag: sql`. Required fields: `db_query` (truncated), `db_table`, `db_time_ms`, `sql_type`. **Never** log raw `bindings` in prod.
+Separate channel, `tag: sql`. Required fields: `db_query` (truncated), `db_table`, `db_duration`, `sql_type`. **Never** log raw `bindings` in prod.
 
 Two thresholds:
 
@@ -447,7 +455,7 @@ The rest:
 ```jsonc
 {"level":"info","level_name":"info","message":"http call ok",
  "context":{"tag":"upstream","target":"payments-api","method":"POST","path":"/charge",
-            "response_code":200,"latency_ms":143,"response_size":512,"request_id":"..."}}
+            "response_code":"200","latency_duration":0.143,"response_size":512,"request_id":"..."}}
 ```
 
 Why we don't optimize "silence = normal":
@@ -462,8 +470,8 @@ Required fields:
 |------------------|--------|------------------------------------------------|
 | `target`         | string | upstream name (low cardinality, not URL)       |
 | `method`, `path` | string | for HTTP; path without query string            |
-| `response_code`  | int    | HTTP/gRPC code                                 |
-| `latency_ms`     | int    | end-to-end                                     |
+| `response_code`  | string | HTTP/gRPC code                                 |
+| `latency_duration` | float  | end-to-end, seconds                          |
 | `response_size`  | int    | in bytes                                       |
 | `attempt`        | int    | 1 on the first successful attempt              |
 
@@ -487,7 +495,7 @@ Required fields on a failure (in addition to §6.4.1):
 
 - `attempt` — attempt number, starting at 1
 - `max_attempts`
-- `backoff_ms` — how long we waited before this attempt
+- `backoff_duration` — how many seconds we waited before this attempt
 - `error_reason` — short string (`timeout`, `connection_refused`, `5xx`, `4xx`), not a sentence
 - `exception` (if any) — class, not the message
 
@@ -542,7 +550,7 @@ Mandatory if any of:
   "actor": {
     "user_id": 67890,
     "role": "admin",
-    "session_id": "sha256:a1b2c3d4",
+    "session_id": "sha256:a1b2c3d4",   // hash — pinned to string, see §4.5
     "ip": "1.2.3.4",
     "user_agent": "...",
     "impersonated_by": null
@@ -828,7 +836,7 @@ A doc without a catalog is a recommendation without enforcement. The catalog mak
 ```yaml
 - name: order_id
   layer: context
-  type: int
+  type: int  # ids are ints on purpose (§4.5)
   description: Order identifier in the billing domain
   owner: team-billing
   added_in: v1
@@ -902,11 +910,11 @@ Field names diverge from [OTel Semantic Conventions](https://opentelemetry.io/do
 | `request_host`         | `server.address`                    |                                   |
 | `request_user_agent`   | `user_agent.original`               |                                   |
 | `status_code`          | `http.response.status_code`         | for HTTP                          |
-| `latency_ms`           | `http.client.request.duration`      | OTel in seconds, we use ms        |
+| `latency_duration`     | `http.client.request.duration`      | both in seconds                   |
 | `target`               | `server.address`                    | for upstream calls                |
 | `db_query`             | `db.query.text`                     |                                   |
 | `db_table`             | `db.collection.name`                |                                   |
-| `db_time_ms`           | `db.client.operation.duration`      | OTel in seconds, we use ms        |
+| `db_duration`          | `db.client.operation.duration`      | both in seconds                   |
 | `exception`            | `exception.type`                    | FQN of the class                  |
 | `exception_message`    | `exception.message`                 |                                   |
 | `trace`                | `exception.stacktrace`              | for exception logs                |

@@ -54,6 +54,20 @@ return [
     // When true, context keys are lowercased + snake_cased. Default off = no breaking change.
     'snake_case' => (bool) env('LOG_SNAKE_CASE', false),
 
+    // ---- Context field types (docs/ContextFieldNaming.ru.md) ----
+    // Project rules MERGED on top of LogManager::$contextTypeRules (a project entry wins
+    // for the same pattern). Buckets, highest priority first: suffix | reserved | exact |
+    // word | prefix; values: int | float | bool | string | skip. A 'suffix'/'word'/'prefix'
+    // entry is ONE lowercase segment ('rub', not '_rub'); 'exact' is a whole lowercase key.
+    // '*_id' and the bare 'id' are int by default. Pin any NON-numeric id (UUID / hash /
+    // hex) or any id with leading zeros to 'string' here — there is no '_string' suffix to
+    // escape with, and the uncastable-falls-back-to-string behaviour is not a guarantee.
+    'context_type_rules' => [
+        // 'word'  => ['rub' => 'float'],
+        // 'exact' => ['deliverytime' => 'int'],
+        // 'exact' => ['session_id' => 'string', 'trace_id' => 'string'],
+    ],
+
     // ---- log_type classification (spec §4.3.1, Option A) ----
     // When true, LaraLogServiceProvider installs error/exception/shutdown handlers
     // (chained to the framework's) so logs get log_type = trigger|exception|fatal.

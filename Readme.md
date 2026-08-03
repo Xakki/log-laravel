@@ -83,17 +83,17 @@ php artisan vendor:publish --tag=laralog-config
 Read **env() inside `config/logger.php`, never at log-time** — config values are baked in by
 `php artisan config:cache`, while a runtime `env()` returns null once config is cached.
 
-| Key | Default | What |
-|---|---|---|
-| `message_limit` | `3024` | max message length kept |
-| `allow_memory` | `false` | attach `memory_usage` / `memory_peak` |
-| `extra` | `app_name`/`app_env`/`app_ver`/`log_ver` + `tier`/`release_*`/ from env | stable per-process fields (§4.2); `ExtraProcessor` copies this whole array onto every record (empty values dropped). Add your own keys here. |
-| `trace.excluded_partials` | `['Monolog','Illuminate/Log/','vendor/']` | frames stripped from `file`/`trace` |
-| `trace.depth` | `warning:5, error:10, critical:20` | stack-trace frames by level (§3.7) |
-| `trace.arg_limit` | `128` | max chars per stringified trace arg |
-| `redact` | `[]` | extra secret needles, **merged** with the built-in denylist (§2) |
-| `snake_case` | `false` | lowercase + snake_case context keys (§4.7); **breaking — opt-in** |
-| `capture_handlers` | `false` | install chained error/exception/shutdown handlers to set `log_type` (§4.3.1) |
+| Key                       | Default                                                                 | What                                                                                                                                         |
+|---------------------------|-------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `message_limit`           | `3024`                                                                  | max message length kept                                                                                                                      |
+| `allow_memory`            | `false`                                                                 | attach `memory_usage` / `memory_peak`                                                                                                        |
+| `extra`                   | `app_name`/`app_env`/`app_ver`/`log_ver` + `tier`/`release_*`/ from env | stable per-process fields (§4.2); `ExtraProcessor` copies this whole array onto every record (empty values dropped). Add your own keys here. |
+| `trace.excluded_partials` | `['Monolog','Illuminate/Log/','vendor/']`                               | frames stripped from `file`/`trace`                                                                                                          |
+| `trace.depth`             | `warning:5, error:10, critical:20`                                      | stack-trace frames by level (§3.7)                                                                                                           |
+| `trace.arg_limit`         | `128`                                                                   | max chars per stringified trace arg                                                                                                          |
+| `redact`                  | `[]`                                                                    | extra secret needles, **merged** with the built-in denylist (§2)                                                                             |
+| `snake_case`              | `false`                                                                 | lowercase + snake_case context keys (§4.7); **breaking — opt-in**                                                                            |
+| `capture_handlers`        | `false`                                                                 | install chained error/exception/shutdown handlers to set `log_type` (§4.3.1)                                                                 |
 
 > **`capture_handlers`** installs global PHP handlers chained to the framework's. Enable it
 > only after exercising your error / exception / fatal paths — see `docs/LoggingRules.md` §4.3.1.

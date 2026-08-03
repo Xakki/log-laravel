@@ -15,26 +15,32 @@ class SqlLogServiceProvider extends ServiceProvider
             $sqlSlowLogAll = (int) config('logging.sqlSlowLogAll');
             $sqlSlowLogSelect = (int) config('logging.sqlSlowLogForSelect');
             DB::listen(function (QueryExecuted $query) use ($logStack, $sqlSlowLogAll, $sqlSlowLogSelect) {
-                $milliseconds = (int)($query->time * 1000);
-                if ($sqlSlowLogAll && $sqlSlowLogAll > $milliseconds) {
-                    return;
-                }
+                // QueryExecuted::$time is already in milliseconds (Laravel docs it as such).
+                $milliseconds = (int) round($query->time);
 
                 if (stripos($query->sql, 'telescope') !== false) {
                     return;
                 }
-                preg_match('/(UPDATE|DELETE FROM|INSERT INTO|FROM)\s+([\w_]+)/ui', $query->sql, $m);
-                $sqlType = $m[1] ?? '';
+                // Grammar output is lowercase and wraps identifiers in quotes/backticks
+                // (e.g. "select * from `users` where ..."), so the keyword match must be
+                // case-insensitive and the table match must tolerate a leading quote char.
+                preg_match('/(UPDATE|DELETE\s+FROM|INSERT\s+INTO|FROM)\s+[`"\[]?([\w.]+)[`"\]]?/i', $query->sql, $m);
+                // preg_replace returns null on error; (string) keeps strtoupper() typed.
+                $sqlType = isset($m[1]) ? strtoupper((string) preg_replace('/\s+/', ' ', trim($m[1]))) : '';
                 $table = $m[2] ?? '';
                 if ($sqlType == 'FROM') {
                     $sqlType = 'SELECT';
-                    if ($sqlSlowLogSelect && $sqlSlowLogSelect > $milliseconds) {
-                        return;
-                    }
                 } elseif ($sqlType == 'DELETE FROM') {
                     $sqlType = 'DELETE';
                 } elseif ($sqlType == 'INSERT INTO') {
                     $sqlType = 'INSERT';
+                }
+
+                // SELECTs get their own (typically lower) threshold when configured;
+                // everything else falls back to the general slow-query threshold.
+                $threshold = ($sqlType === 'SELECT' && $sqlSlowLogSelect) ? $sqlSlowLogSelect : $sqlSlowLogAll;
+                if ($threshold && $threshold > $milliseconds) {
+                    return;
                 }
 
                 $bind = '';
