@@ -6,8 +6,9 @@ export
 
 HOST_NAME := $(shell hostname)
 HOST_IP  := $(shell hostname -I 2>/dev/null | awk '{print $$1}' || echo unknown)
+TTY ?= $(shell if [ -t 0 ]; then echo "-it"; else echo "-i"; fi)
 
-docker := docker run -it -v $(PWD):/app ${DOCKER_USER}/${TAG}
+docker := docker run ${TTY} -v $(PWD):/app ${DOCKER_USER}/${TAG}
 composer := $(docker) composer
 
 run: docker-build composer-u test

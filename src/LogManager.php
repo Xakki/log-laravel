@@ -275,6 +275,23 @@ class LogManager extends \Illuminate\Log\LogManager
      */
     public function appendContext(Level $level, string|\Stringable $message, array &$context): string
     {
+        // LOGGER_SKIP_TRACE ('skipTrace') opt-out (mirrors the Python port's
+        // trace.py::should_skip_trace()): a truthy marker suppresses BOTH the call-site
+        // and the exception trace below, wins over any configured trace depth, and the
+        // marker key itself is stripped here so it never leaks onto the wire — same
+        // treatment as 'exception' just below. Truthiness goes through contextCastBool()
+        // (this library's own bool convention, CONTEXT_FALSE_VALUES) rather than a bare
+        // PHP truthy check, so a string 'false'/'0'/'off' opts back IN, consistent with
+        // every other bool-shaped context field.
+        $skipTrace = false;
+        if (array_key_exists(\LOGGER_SKIP_TRACE, $context)) {
+            $skipTraceRaw = $context[\LOGGER_SKIP_TRACE];
+            if (is_scalar($skipTraceRaw)) {
+                $skipTrace = self::contextCastBool($skipTraceRaw);
+            }
+            unset($context[\LOGGER_SKIP_TRACE]);
+        }
+
         $e = null;
         if (isset($context['exception']) && $context['exception'] instanceof \Throwable) {
             $e = $context['exception'];
@@ -297,13 +314,17 @@ class LogManager extends \Illuminate\Log\LogManager
             $context['exception'] = get_class($e);
             $context['exception_code'] = (int) $e->getCode();
             $context['file'] = self::getRelativeFilePath($e->getFile()) . ':' . $e->getLine();
-            $context['trace'] = self::traceToString($e->getTrace(), 30, false);
+            if (! $skipTrace) {
+                $context['trace'] = self::traceToString($e->getTrace(), 30, false);
+            }
             if ($e->getPrevious()) {
                 $context['exception_prev'] = get_class($e->getPrevious());
                 $context['exception_prev_message'] = $e->getPrevious()->getMessage();
                 $context['exception_prev_file'] = self::getRelativeFilePath($e->getPrevious()->getFile()) . ':' . $e->getPrevious()->getLine();
                 $context['exception_prev_code'] = (int) $e->getPrevious()->getCode();
-                $context['exception_prev_trace'] = self::traceToString($e->getPrevious()->getTrace(), 30, false);
+                if (! $skipTrace) {
+                    $context['exception_prev_trace'] = self::traceToString($e->getPrevious()->getTrace(), 30, false);
+                }
             }
         }
 
@@ -312,7 +333,7 @@ class LogManager extends \Illuminate\Log\LogManager
         if (empty($context['file'])) {
             $trace = array_slice(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 40), 1);
             $context['file'] = self::getFileLine($trace);
-            if (empty($context['trace']) && $level->value >= Level::Warning->value) {
+            if (! $skipTrace && empty($context['trace']) && $level->value >= Level::Warning->value) {
                 $context['trace'] = self::traceToString($trace, self::traceDepthForLevel($level));
             }
         }

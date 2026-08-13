@@ -118,6 +118,55 @@ class LogManagerTest extends AbstractTestCase
         $this->assertStringContainsString('***', $log);
     }
 
+    public function testSkipTraceMarkerSuppressesCallSiteTrace(): void
+    {
+        // Baseline: without the marker, an error-level log gets a trace (same fixture as
+        // testTraceAttachedByLevel above).
+        $withTrace = $this->logToFile('error', 'a problem');
+        $this->assertStringContainsString('"trace":', $withTrace);
+
+        $skipped = $this->logToFile('error', 'a problem', [\LOGGER_SKIP_TRACE => true]);
+        $this->assertStringNotContainsString('"trace":', $skipped);
+    }
+
+    public function testSkipTraceMarkerSuppressesExceptionTrace(): void
+    {
+        $log = $this->logToFile('error', 'boom', [
+            'exception' => new \RuntimeException('x'),
+            \LOGGER_SKIP_TRACE => true,
+        ]);
+
+        $this->assertStringContainsString('"exception":"RuntimeException"', $log);
+        $this->assertStringNotContainsString('"trace":', $log);
+    }
+
+    public function testSkipTraceMarkerKeyDoesNotLeakIntoContext(): void
+    {
+        $log = $this->logToFile('warning', 'msg', [\LOGGER_SKIP_TRACE => true]);
+
+        $this->assertStringNotContainsString('skipTrace', $log);
+        $this->assertStringNotContainsString('skip_trace', $log);
+    }
+
+    public function testSkipTraceWinsOverConfiguredTraceDepth(): void
+    {
+        // Even with an explicit, generous configured depth, a truthy skip-trace marker must
+        // still suppress the trace entirely.
+        $log = $this->logToFile('critical', 'deep', [\LOGGER_SKIP_TRACE => true], 'debug', [
+            'logger.trace.depth' => ['warning' => 5, 'error' => 10, 'critical' => 20],
+        ]);
+        $this->assertStringNotContainsString('"trace":', $log);
+    }
+
+    public function testSkipTraceFalsyStringDoesNotSuppressTrace(): void
+    {
+        // Truthiness is decided via contextCastBool()/CONTEXT_FALSE_VALUES, matching how
+        // every other bool-shaped context field in this library is interpreted — a string
+        // 'false' opts back IN to tracing rather than opting out.
+        $log = $this->logToFile('error', 'a problem', [\LOGGER_SKIP_TRACE => 'false']);
+        $this->assertStringContainsString('"trace":', $log);
+    }
+
     public function testExtraProcessorDumpsConfigExtra(): void
     {
         // ExtraProcessor copies config('logger.extra') verbatim; empty values are dropped.
