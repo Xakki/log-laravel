@@ -93,7 +93,7 @@ The text line travels through this transport's fluent-bit config like any
 other native (non-JSON) container output:
 
 1. **Route by label.** The container is labelled `log_format: python`
-   (see `https://github.com/Xakki/fluent-log`). fluent-bit's generic
+   (see `https://github.com/Xakki/log-fluent`). fluent-bit's generic
    `rewrite_tag` rule turns the tag into `gl.python` based on that label —
    routing is by `log_format`, never by container/service name.
 2. **Global JSON parse fails.** `json_default` runs first and *fails* — the
