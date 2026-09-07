@@ -5,7 +5,7 @@
   "type": "library",
   "tag": "logger",
   "minimum-stability": "stable",
-  "license": "proprietary",
+  "license": "Apache-2.0",
   "require": {
     "php": "^8.3|^8.4|^8.5",
     "laravel/framework": "^10|^11|^12",
@@ -20,7 +20,9 @@
     "squizlabs/php_codesniffer": "*"
   },
   "autoload": {
-    "files": ["src/const.php"],
+    "files": [
+      "src/const.php"
+    ],
     "psr-4": {
       "Xakki\\LaraLog\\": "src/"
     }
