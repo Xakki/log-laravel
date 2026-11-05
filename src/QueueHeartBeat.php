@@ -1,6 +1,6 @@
 <?php
 
-namespace Xakki\LaraLog;
+namespace Xakki\Log\Laravel;
 
 use Illuminate\Queue\Events\WorkerStopping;
 use Illuminate\Support\Facades\Event;

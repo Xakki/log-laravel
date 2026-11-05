@@ -1,6 +1,6 @@
 <?php
 
-namespace Xakki\LaraLog\Formatters;
+namespace Xakki\Log\Laravel\Formatters;
 
 use Monolog\Formatter\LineFormatter;
 use Monolog\LogRecord;

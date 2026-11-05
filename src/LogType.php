@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Xakki\LaraLog;
+namespace Xakki\Log\Laravel;
 
 /**
  * Classifies who initiated a log (spec §4.3.1, `log_type`):

@@ -1,6 +1,6 @@
 <?php
 
-namespace Xakki\LaraLog;
+namespace Xakki\Log\Laravel;
 
 use Illuminate\Log\Logger;
 

@@ -1,14 +1,14 @@
 <?php declare(strict_types=1);
 
-namespace Xakki\LaraLogTests\Unit;
+namespace Xakki\Log\Laravel\Tests\Unit;
 
 use Monolog\Processor\LoadAverageProcessor;
 use Monolog\Processor\WebProcessor;
-use Xakki\LaraLog\LogManager;
-use Xakki\LaraLog\Processor\ExtraProcessor;
-use Xakki\LaraLog\Redactor;
-use Xakki\LaraLog\TraitFileTrace;
-use Xakki\LaraLogTests\AbstractTestCase;
+use Xakki\Log\Laravel\LogManager;
+use Xakki\Log\Laravel\Processor\ExtraProcessor;
+use Xakki\Log\Laravel\Redactor;
+use Xakki\Log\Laravel\TraitFileTrace;
+use Xakki\Log\Laravel\Tests\AbstractTestCase;
 
 class LogManagerTest extends AbstractTestCase
 {
@@ -207,12 +207,12 @@ class LogManagerTest extends AbstractTestCase
                     'facility' => LOG_LOCAL0,
                     'level' => env('LOG_LEVEL', 'info'),
                 ],
-                'formatter' => \Xakki\LaraLog\Formatters\CustomFormatter::class,
+                'formatter' => \Xakki\Log\Laravel\Formatters\CustomFormatter::class,
                 'formatter_with' => [
                     'dateFormat' => 'Y-m-d\TH:i:s.uP',
                 ],
                 'processors' => [
-                    \Xakki\LaraLog\Processor\ExtraProcessor::class,
+                    \Xakki\Log\Laravel\Processor\ExtraProcessor::class,
                     LoadAverageProcessor::class,
                     WebProcessor::class,
                 ],

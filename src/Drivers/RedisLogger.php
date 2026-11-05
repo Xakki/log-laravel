@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Xakki\LaraLog\Drivers;
+namespace Xakki\Log\Laravel\Drivers;
 
 use Illuminate\Support\Facades\Redis;
 use Monolog\Formatter\LogstashFormatter;

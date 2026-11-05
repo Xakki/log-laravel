@@ -1,6 +1,6 @@
 <?php
 
-namespace Xakki\LaraLogTests;
+namespace Xakki\Log\Laravel\Tests;
 
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 

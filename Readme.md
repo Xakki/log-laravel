@@ -1,8 +1,11 @@
 
-# LaraLog
+# log-laravel
 
 Structured production logging for Laravel — a drop-in `LogManager`, custom drivers, formatters
 and Monolog processors that enrich every record and keep it safe and queryable.
+
+Repository: [Xakki/log-laravel](https://github.com/Xakki/log-laravel) · Composer: `xakki/log-laravel`
+(formerly `xakki/laralog`). PHP namespace: `Xakki\Log\Laravel` (formerly `Xakki\LaraLog`).
 
 # Documentation
 
@@ -34,7 +37,7 @@ Plus the `ExtraProcessor` adds stable per-process fields (`app_name`, `app_env`,
 
 # Install
 
-`composer require xakki/laralog`
+`composer require xakki/log-laravel`
 
 # Configure
 
@@ -47,7 +50,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         ...
-        $this->app->singleton('log', fn ($app) => new \Xakki\LaraLog\LogManager($app));
+        $this->app->singleton('log', fn ($app) => new \Xakki\Log\Laravel\LogManager($app));
         ...
     }
 }
@@ -58,7 +61,7 @@ or `bootstrap/app.php`
 ```php
     $app->singleton(
         \Illuminate\Log\LogManager::class,
-        \Xakki\LaraLog\LogManager::class
+        \Xakki\Log\Laravel\LogManager::class
     );
 ```
 
@@ -68,7 +71,7 @@ or `bootstrap/app.php`
 queue job, and (opt-in) installs the `log_type` capture handlers:
 
 ```php
-$this->app->register(\Xakki\LaraLog\LaraLogServiceProvider::class);
+$this->app->register(\Xakki\Log\Laravel\LaraLogServiceProvider::class);
 ```
 
 Without it (and without a published `config/logger.php`) `ExtraProcessor` has no
@@ -110,7 +113,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         ...
-        $this->app->register(\Xakki\LaraLog\SqlLogServiceProvider::class);
+        $this->app->register(\Xakki\Log\Laravel\SqlLogServiceProvider::class);
         ...
     }
 }
@@ -139,12 +142,12 @@ Logged fields (spec §6.2): `db_table`, `db_time_ms`, `db_bindings` (only when `
                 'facility' => LOG_LOCAL0,
                 'level' => env('LOG_LEVEL', 'info'),
             ],
-            'formatter' => \Xakki\LaraLog\Formatters\CustomFormatter::class,
+            'formatter' => \Xakki\Log\Laravel\Formatters\CustomFormatter::class,
             'formatter_with' => [
                 'dateFormat' => 'Y-m-d\TH:i:s.uP',
             ],
             'processors' => [
-                \Xakki\LaraLog\Processor\ExtraProcessor::class, 
+                \Xakki\Log\Laravel\Processor\ExtraProcessor::class, 
                 \Monolog\Processor\LoadAverageProcessor::class,
                 \Monolog\Processor\WebProcessor::class
             ],
@@ -167,7 +170,7 @@ By default, the log size is limited to 1400 characters - a longer log will be lo
             ],
             'formatter'    => \Monolog\Formatter\JsonFormatter::class,
             'processors' => [
-                \Xakki\LaraLog\Processor\ExtraProcessor::class, 
+                \Xakki\Log\Laravel\Processor\ExtraProcessor::class, 
                 \Monolog\Processor\LoadAverageProcessor::class,
                 \Monolog\Processor\WebProcessor::class
             ],
@@ -182,12 +185,12 @@ By default, the log size is limited to 1400 characters - a longer log will be lo
 ```php
         'redis' => [
             'driver' => 'custom',
-            'via'    => \Xakki\LaraLog\Drivers\RedisLogger::class,
+            'via'    => \Xakki\Log\Laravel\Drivers\RedisLogger::class,
             'connection'   => env('LOG_REDIS_CONNECTION', 'default'),
             'level' => env('LOG_LEVEL', 'debug'),
             'capSize' => env('REDIS_LOG_CAP_SIZE', 10000),
             'processors' => [
-                \Xakki\LaraLog\Processor\ExtraProcessor::class, 
+                \Xakki\Log\Laravel\Processor\ExtraProcessor::class, 
                 \Monolog\Processor\LoadAverageProcessor::class,
                 \Monolog\Processor\WebProcessor::class
             ],
@@ -245,3 +248,12 @@ U can add custom  options, like `LOG_REDIS_PREFIX`, `LOG_REDIS_PORT` and etc
     //'ignore_exceptions' => true,
 ],
 ```
+
+# Related projects
+
+Sibling logging libraries sharing one field contract ([Logging Rules](https://github.com/Xakki/log-laravel/blob/main/docs/LoggingRules.md)):
+
+* [log-symfony](https://github.com/Xakki/log-symfony) — `xakki/log-symfony`. PSR-3 / Symfony / Monolog 3: context enrichment, type coercion, redaction.
+* [log-php](https://github.com/Xakki/log-php) — `xakki/log-php`. Plain PHP (no framework, PSR-3; PHP 5.6+ on branch `master56`): error/exception catcher with pluggable storages.
+* [log-python](https://github.com/Xakki/log-python) — `xakki-log-python` (PyPI). Python: structured JSON logging with the same field/type contract.
+* [log-fluent](https://github.com/Xakki/log-fluent) — `xakki/log-fluent`. Fluent Bit config bundle that ships these logs to Graylog (GELF) and Prometheus.

@@ -1,6 +1,6 @@
 {
   "name": "xakki/log-laravel",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "Laravel log drivers",
   "type": "library",
   "tag": "logger",
@@ -24,12 +24,12 @@
       "src/const.php"
     ],
     "psr-4": {
-      "Xakki\\LaraLog\\": "src/"
+      "Xakki\\Log\\Laravel\\": "src/"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "Xakki\\LaraLogTests\\": "tests/"
+      "Xakki\\Log\\Laravel\\Tests\\": "tests/"
     }
   },
   "config": {

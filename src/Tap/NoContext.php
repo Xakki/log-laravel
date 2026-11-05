@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Xakki\LaraLog\Tap;
+namespace Xakki\Log\Laravel\Tap;
 
 use Illuminate\Log\Logger;
 

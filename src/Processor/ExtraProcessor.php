@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Xakki\LaraLog\Processor;
+namespace Xakki\Log\Laravel\Processor;
 
 use Monolog\LogRecord;
 use Monolog\Processor\ProcessorInterface;

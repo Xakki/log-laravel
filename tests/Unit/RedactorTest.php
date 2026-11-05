@@ -1,9 +1,9 @@
 <?php declare(strict_types=1);
 
-namespace Xakki\LaraLogTests\Unit;
+namespace Xakki\Log\Laravel\Tests\Unit;
 
-use Xakki\LaraLog\Redactor;
-use Xakki\LaraLogTests\AbstractTestCase;
+use Xakki\Log\Laravel\Redactor;
+use Xakki\Log\Laravel\Tests\AbstractTestCase;
 
 class RedactorTest extends AbstractTestCase
 {

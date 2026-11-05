@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Xakki\LaraLog;
+namespace Xakki\Log\Laravel;
 
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\Event;
