@@ -1,4 +1,4 @@
-ARG PHP_IMAGE=php:8.3-cli-alpine
+ARG PHP_IMAGE=php:8.5-cli-alpine
 FROM ${PHP_IMAGE}
 
 WORKDIR /app
